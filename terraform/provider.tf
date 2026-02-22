@@ -1,9 +1,9 @@
 terraform {
   required_version = ">= 1.9, < 2.0"
   backend "s3" {
-    bucket = "mlops-terraform-tfstate-20260222" # 作成したS3バケット名を設定する
+    bucket = "mlops-terraform-tfstate-tokyo-20260222" # 作成したS3バケット名を設定する
     key    = "terraform.tfstate"
-    region = "us-west-2"
+    region = "ap-northeast-1"
 
   }
   required_providers {
