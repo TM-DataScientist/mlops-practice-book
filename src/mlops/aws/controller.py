@@ -20,8 +20,10 @@ def download_file_from_s3(s3_bucket: str, s3_key: str, file_path: str) -> None:
     logger.info(f"Finished download model file: {s3_key}, file_path: {file_path}")
 
 
+# 指定されたローカルディレクトリ内のすべてのファイルを、サブディレクトリの構造を保った状態でS3バケットへアップロードする関数
 def upload_dir_to_s3(dir_path: Path, s3_bucket: str, key_prefix: str) -> None:
     s3_client = boto3.client("s3")
+    # 指定したディレクトリ内にあるすべてのファイルやフォルダを、サブディレクトリまで含めて再帰的に探し出す処理
     for file_path in dir_path.rglob("*"):
         if file_path.is_file():
             s3_key = key_prefix + "/" + str(file_path.relative_to(dir_path))
