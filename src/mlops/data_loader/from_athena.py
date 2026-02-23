@@ -1,3 +1,5 @@
+# AWS Athena からデータを取得するデータローダーモジュール
+# SQL の組み立てと Athena へのクエリ実行を担う
 import logging
 from datetime import datetime
 
@@ -7,9 +9,12 @@ import pandas as pd
 from mlops.const import GLUE_DATABASE
 
 logger = logging.getLogger(__name__)
+# Athena の日時フィルタで使用する日時フォーマット文字列
 DATETIME_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 
+# テーブル名と日時範囲から SELECT クエリ文字列を動的に組み立てる関数
+# from_datetime / to_datetime / additional_where_clause は省略可能でそれぞれ AND 条件として追加される
 def compose_sql(
     table: str,
     from_datetime: datetime | None = None,
@@ -22,12 +27,15 @@ def compose_sql(
     # データ取得の開始時刻と終了時刻からwhere句を作成
     where_clause = []
     if from_datetime is not None:
+        # 開始時刻条件（logged_at >= '...'）を追加する
         where_clause += [f"logged_at >= '{from_datetime.strftime(DATETIME_FORMAT)}'"]
     if to_datetime is not None:
+        # 終了時刻条件（logged_at <= '...'）を追加する
         where_clause += [f"logged_at <= '{to_datetime.strftime(DATETIME_FORMAT)}'"]
     # 指定したwhere句を追加
     if additional_where_clause:
         where_clause += [additional_where_clause]
+    # 条件が1つ以上あれば WHERE ... AND ... の形式で結合する
     if where_clause:
         sql += " WHERE " + " AND ".join(where_clause)
 
@@ -36,9 +44,12 @@ def compose_sql(
     return sql
 
 
+# 組み立てた SQL を AWS Athena で実行し、結果を DataFrame として返す関数
+# ctas_approach=False にすることで CTAS（Create Table As Select）を無効化し、直接クエリ結果を取得する
 def extract_dataframe_from_athena(sql: str, database: str = GLUE_DATABASE) -> pd.DataFrame:
     logger.info(f"Start extracting data from Athena. {sql=}, {database=}.")
     df = wr.athena.read_sql_query(sql, database=database, ctas_approach=False, workgroup="mlops")
+    # 取得件数が 0 件の場合はデータ品質に問題があるため即座に例外を発生させる
     assert len(df) != 0
 
     logger.info(f"Finish extracting data from Athena. {len(df)=}.")
