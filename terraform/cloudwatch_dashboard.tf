@@ -1,7 +1,10 @@
+# CloudWatchダッシュボード: MLOpsシステムの主要メトリクスを一覧表示するダッシュボードを定義する
 resource "aws_cloudwatch_dashboard" "mlops" {
   dashboard_name = "mlops"
+  # ダッシュボードのウィジェット構成をJSON形式で定義する
   dashboard_body = jsonencode({
     widgets = [
+      # ウィジェット1: ECSサービス（main/sub）のCPU使用率を時系列グラフで表示する（左上 6x6）
       {
         type   = "metric"
         x      = 0
@@ -18,6 +21,7 @@ resource "aws_cloudwatch_dashboard" "mlops" {
           region = local.aws_region
         }
       },
+      # ウィジェット2: ECSサービス（main/sub）のメモリ使用率を時系列グラフで表示する（右上 6x6）
       {
         type   = "metric"
         x      = 6
@@ -35,6 +39,7 @@ resource "aws_cloudwatch_dashboard" "mlops" {
           region = local.aws_region
         }
       },
+      # ウィジェット3: ALBのターゲットグループ別レスポンスタイムを時系列グラフで表示する（中央 6x6）
       {
         type   = "metric"
         x      = 12
@@ -65,6 +70,7 @@ resource "aws_cloudwatch_dashboard" "mlops" {
           region = "${local.aws_region}"
         }
       },
+      # ウィジェット4: ALBのターゲットグループ別リクエスト数の合計を時系列グラフで表示する（右端 6x6）
       {
         type   = "metric"
         x      = 18
@@ -82,6 +88,7 @@ resource "aws_cloudwatch_dashboard" "mlops" {
           stat    = "Sum"
         }
       },
+      # ウィジェット5: ECSサービス別の稼働中タスク数をスパークライン付き単一値で表示する（左下 6x6）
       {
         type   = "metric",
         x      = 0,
@@ -98,6 +105,7 @@ resource "aws_cloudwatch_dashboard" "mlops" {
           region = local.aws_region
         }
       },
+      # ウィジェット6: ALBの5xxエラー数をスパークライン付き単一値で表示する（中央下 6x6）
       {
         "type" : "metric",
         "x" : 6,
@@ -113,6 +121,8 @@ resource "aws_cloudwatch_dashboard" "mlops" {
           "region" : local.aws_region,
         }
       },
+      # ウィジェット7: predict-apiのログをテーブル形式で表示する（全幅 24x6）
+      # ヘルスチェックログを除外し、コンテナIDが存在するログのみをJSON解析して表示する
       {
         type   = "log"
         x      = 0

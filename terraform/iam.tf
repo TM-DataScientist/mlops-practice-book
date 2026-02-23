@@ -1,5 +1,7 @@
 # ECS Task Execution Role
+# ECSタスク実行ロールのポリシー定義: コンテナ起動に必要なEC2/CloudWatch/ECRへのアクセス権限
 data "aws_iam_policy_document" "ecs_task_execution" {
+  # ECSがVPC内でコンテナを起動するためのEC2ネットワーク操作権限
   statement {
     effect = "Allow"
     actions = [
@@ -14,6 +16,7 @@ data "aws_iam_policy_document" "ecs_task_execution" {
     ]
     resources = ["*"]
   }
+  # コンテナのログをCloudWatch Logsへ送信するための権限
   statement {
     effect = "Allow"
     actions = [
@@ -23,6 +26,7 @@ data "aws_iam_policy_document" "ecs_task_execution" {
     ]
     resources = ["*"]
   }
+  # ECRからコンテナイメージをプルするための権限
   statement {
     effect = "Allow"
     actions = [
@@ -35,6 +39,7 @@ data "aws_iam_policy_document" "ecs_task_execution" {
   }
 }
 
+# ECSタスク実行ロール用IAMポリシーを作成する
 resource "aws_iam_policy" "ecs_task_execution" {
   name   = "mlops-ecs-task-exection-policy"
   policy = data.aws_iam_policy_document.ecs_task_execution.json
@@ -44,6 +49,7 @@ resource "aws_iam_policy" "ecs_task_execution" {
   }
 }
 
+# ECSタスク実行ロールの信頼ポリシー: ECSタスクサービスにこのロールの引き受けを許可する
 data "aws_iam_policy_document" "ecs_task_execution_assume_role" {
   statement {
     actions = ["sts:AssumeRole"]
@@ -55,6 +61,7 @@ data "aws_iam_policy_document" "ecs_task_execution_assume_role" {
   }
 }
 
+# ECSタスク実行ロール: コンテナエージェントがECRやCloudWatchにアクセスする際に使用するロール
 resource "aws_iam_role" "ecs_task_execution" {
   name               = "mlops-ecs-task-execution-role"
   assume_role_policy = data.aws_iam_policy_document.ecs_task_execution_assume_role.json
@@ -64,6 +71,7 @@ resource "aws_iam_role" "ecs_task_execution" {
   }
 }
 
+# ECSタスク実行ロールにポリシーをアタッチする
 resource "aws_iam_role_policy_attachment" "ecs_task_execution" {
   role       = aws_iam_role.ecs_task_execution.name
   policy_arn = aws_iam_policy.ecs_task_execution.arn
@@ -71,7 +79,9 @@ resource "aws_iam_role_policy_attachment" "ecs_task_execution" {
 
 
 # ECS Task Role
+# ECSタスクロールのポリシー定義: コンテナ内のアプリが使用するAWSサービスへのアクセス権限
 data "aws_iam_policy_document" "ecs_task" {
+  # CloudWatch Logsへのログ書き込み権限
   statement {
     effect = "Allow"
     actions = [
@@ -85,6 +95,7 @@ data "aws_iam_policy_document" "ecs_task" {
     resources = ["*"]
   }
 
+  # S3バケットへのデータ読み書き権限（モデル/データ/フィーチャーストアのアクセスに使用）
   statement {
     actions = [
       "s3:PutObject",
@@ -102,6 +113,7 @@ data "aws_iam_policy_document" "ecs_task" {
     resources = ["*"]
   }
 
+  # Athenaクエリ実行権限（推論ログの分析に使用）
   statement {
     effect = "Allow"
     actions = [
@@ -110,6 +122,7 @@ data "aws_iam_policy_document" "ecs_task" {
     resources = ["*"]
   }
 
+  # Glueデータカタログの読み書き権限（Athenaがテーブル定義を参照するために必要）
   statement {
     effect = "Allow"
     actions = [
@@ -142,6 +155,7 @@ data "aws_iam_policy_document" "ecs_task" {
     resources = ["*"]
   }
 
+  # DynamoDBアクセス権限（オンラインフィーチャーストアとモデルレジストリの読み書きに使用）
   statement {
     effect = "Allow"
     actions = [
@@ -153,6 +167,7 @@ data "aws_iam_policy_document" "ecs_task" {
     ]
     resources = ["*"]
   }
+  # Kinesis Firehoseへの書き込み権限（推論ログをS3へストリーミング転送するために使用）
   statement {
     effect = "Allow"
     actions = [
@@ -167,6 +182,7 @@ data "aws_iam_policy_document" "ecs_task" {
 
 
 
+# ECSタスクロール用IAMポリシーを作成する
 resource "aws_iam_policy" "ecs_task" {
   name   = "mlops-ecs-task-policy"
   policy = data.aws_iam_policy_document.ecs_task.json
@@ -176,6 +192,7 @@ resource "aws_iam_policy" "ecs_task" {
   }
 }
 
+# ECSタスクロールの信頼ポリシー: EC2/SSM/ECSタスクサービスにロールの引き受けを許可する
 data "aws_iam_policy_document" "ecs_task_assume_role" {
   statement {
     effect  = "Allow"
@@ -187,6 +204,7 @@ data "aws_iam_policy_document" "ecs_task_assume_role" {
   }
 }
 
+# ECSタスクロール: コンテナ内のアプリケーションがAWSリソースにアクセスする際に使用するロール
 resource "aws_iam_role" "ecs_task" {
   name               = "mlops-ecs-task-role"
   assume_role_policy = data.aws_iam_policy_document.ecs_task_assume_role.json
@@ -196,13 +214,16 @@ resource "aws_iam_role" "ecs_task" {
   }
 }
 
+# ECSタスクロールにポリシーをアタッチする
 resource "aws_iam_role_policy_attachment" "ecs_task" {
   role       = aws_iam_role.ecs_task.name
   policy_arn = aws_iam_policy.ecs_task.arn
 }
 
 # Step Functions Role
+# Step Functionsロールのポリシー定義: ステートマシンがAWSサービスを操作するための権限
 data "aws_iam_policy_document" "step_functions" {
+  # CloudWatch Logsへのログ配信設定権限（ステートマシンの実行ログ記録に使用）
   statement {
     effect = "Allow"
     actions = [
@@ -217,6 +238,7 @@ data "aws_iam_policy_document" "step_functions" {
     ]
     resources = ["*"]
   }
+  # ECSタスクの起動権限（学習バッチをFargateで実行するために使用）
   statement {
     effect = "Allow"
     actions = [
@@ -224,6 +246,7 @@ data "aws_iam_policy_document" "step_functions" {
     ]
     resources = ["*"]
   }
+  # Glueクローラーの起動・状態確認権限（学習後にデータカタログを更新するために使用）
   statement {
     effect = "Allow"
     actions = [
@@ -232,6 +255,7 @@ data "aws_iam_policy_document" "step_functions" {
     ]
     resources = ["*"]
   }
+  # X-Rayトレース送信権限（ステートマシンの分散トレーシングに使用）
   statement {
     effect = "Allow"
     actions = [
@@ -242,6 +266,7 @@ data "aws_iam_policy_document" "step_functions" {
     ]
     resources = ["*"]
   }
+  # IAMロール委譲権限（ECSタスク起動時にタスクロールを渡すために必要）
   statement {
     effect = "Allow"
     actions = [
@@ -249,6 +274,7 @@ data "aws_iam_policy_document" "step_functions" {
     ]
     resources = ["*"]
   }
+  # EventBridgeルール操作権限（ステートマシンからEventBridgeを制御するために使用）
   statement {
     effect = "Allow"
     actions = [
@@ -260,6 +286,7 @@ data "aws_iam_policy_document" "step_functions" {
       "arn:aws:events:${local.aws_region}:${local.aws_account_id}:rule/*",
     ]
   }
+  # ECSサービス更新権限（新モデルデプロイ後にサービスのタスク定義を更新するために使用）
   statement {
     effect = "Allow"
     actions = [
@@ -271,6 +298,7 @@ data "aws_iam_policy_document" "step_functions" {
   }
 }
 
+# Step Functionsロール用IAMポリシーを作成する
 resource "aws_iam_policy" "step_functions" {
   name   = "mlops-step-functions-policy"
   policy = data.aws_iam_policy_document.step_functions.json
@@ -281,6 +309,7 @@ resource "aws_iam_policy" "step_functions" {
 }
 
 
+# Step Functionsロールの信頼ポリシー: Step FunctionsサービスにAssumeRoleを許可する
 data "aws_iam_policy_document" "step_functions_assume_role" {
   statement {
     actions = ["sts:AssumeRole"]
@@ -291,6 +320,7 @@ data "aws_iam_policy_document" "step_functions_assume_role" {
   }
 }
 
+# Step Functionsロール: ステートマシン（学習パイプライン）が使用するIAMロール
 resource "aws_iam_role" "step_functions" {
   name               = "mlops-step-functions-role"
   assume_role_policy = data.aws_iam_policy_document.step_functions_assume_role.json
@@ -300,13 +330,16 @@ resource "aws_iam_role" "step_functions" {
   }
 }
 
+# Step FunctionsロールにポリシーをアタッチするM
 resource "aws_iam_role_policy_attachment" "step_functions" {
   role       = aws_iam_role.step_functions.name
   policy_arn = aws_iam_policy.step_functions.arn
 }
 
 # Event Bridge Role
+# EventBridgeロールのポリシー定義: スケジューラーがStep FunctionsやELBを操作するための権限
 data "aws_iam_policy_document" "event_bridge" {
+  # Step Functionsのステートマシン実行権限（学習パイプラインをスケジュール起動するために使用）
   statement {
     effect = "Allow"
     actions = [
@@ -314,6 +347,7 @@ data "aws_iam_policy_document" "event_bridge" {
     ]
     resources = ["*"]
   }
+  # ELB操作権限とCloudWatch Logsへのログ書き込み権限（コスト削減のためELBを定期削除するために使用）
   statement {
     effect = "Allow"
     actions = [
@@ -332,6 +366,7 @@ data "aws_iam_policy_document" "event_bridge" {
   }
 }
 
+# EventBridgeロール用IAMポリシーを作成する
 resource "aws_iam_policy" "event_bridge" {
   name   = "mlops-event-bridge-policy"
   policy = data.aws_iam_policy_document.event_bridge.json
@@ -341,6 +376,7 @@ resource "aws_iam_policy" "event_bridge" {
   }
 }
 
+# EventBridgeスケジューラーの信頼ポリシー: EventBridgeスケジューラーにAssumeRoleを許可する
 data "aws_iam_policy_document" "event_bridge_assume_role" {
   statement {
     actions = ["sts:AssumeRole"]
@@ -351,6 +387,7 @@ data "aws_iam_policy_document" "event_bridge_assume_role" {
   }
 }
 
+# EventBridgeロール: スケジューラーがStep FunctionsやELBを操作する際に使用するIAMロール
 resource "aws_iam_role" "event_bridge" {
   name               = "mlops-event-bridge-role"
   assume_role_policy = data.aws_iam_policy_document.event_bridge_assume_role.json
@@ -360,13 +397,16 @@ resource "aws_iam_role" "event_bridge" {
   }
 }
 
+# EventBridgeロールにポリシーをアタッチする
 resource "aws_iam_role_policy_attachment" "event_bridge" {
   role       = aws_iam_role.event_bridge.name
   policy_arn = aws_iam_policy.event_bridge.arn
 }
 
 # Glue Crawler Role
+# Glueクローラーロールのポリシー定義: クローラーがS3を読み取りGlueカタログを更新するための権限
 data "aws_iam_policy_document" "glue_crawler" {
+  # S3バケットのオブジェクト一覧取得・読み取り権限（クロール対象データの参照に使用）
   statement {
     effect = "Allow"
     actions = [
@@ -375,6 +415,7 @@ data "aws_iam_policy_document" "glue_crawler" {
     ]
     resources = ["*"]
   }
+  # Glueカタログのテーブル・パーティション管理権限（クロール結果をカタログに書き込むために使用）
   statement {
     effect = "Allow"
     actions = [
@@ -388,6 +429,7 @@ data "aws_iam_policy_document" "glue_crawler" {
     ]
     resources = ["*"]
   }
+  # CloudWatch Logsへのログ書き込み権限（クローラーの実行ログ記録に使用）
   statement {
     effect = "Allow"
     actions = [
@@ -397,6 +439,7 @@ data "aws_iam_policy_document" "glue_crawler" {
   }
 }
 
+# Glueクローラーロール用IAMポリシーを作成する
 resource "aws_iam_policy" "glue_crawler" {
   name   = "mlops-glue-cralwer-policy"
   policy = data.aws_iam_policy_document.glue_crawler.json
@@ -406,6 +449,7 @@ resource "aws_iam_policy" "glue_crawler" {
   }
 }
 
+# Glueクローラーの信頼ポリシー: GlueサービスにAssumeRoleを許可する
 data "aws_iam_policy_document" "glue_crawler_assume_role" {
   statement {
     actions = ["sts:AssumeRole"]
@@ -416,6 +460,7 @@ data "aws_iam_policy_document" "glue_crawler_assume_role" {
   }
 }
 
+# Glueクローラーロール: Glueクローラーが使用するIAMロール
 resource "aws_iam_role" "glue_crawler" {
   name               = "mlops-glue-crawler-role"
   assume_role_policy = data.aws_iam_policy_document.glue_crawler_assume_role.json
@@ -425,6 +470,7 @@ resource "aws_iam_role" "glue_crawler" {
   }
 }
 
+# GlueクローラーロールにポリシーをアタッチするM
 resource "aws_iam_role_policy_attachment" "glue_crawler" {
   role       = aws_iam_role.glue_crawler.name
   policy_arn = aws_iam_policy.glue_crawler.arn
@@ -432,11 +478,13 @@ resource "aws_iam_role_policy_attachment" "glue_crawler" {
 
 
 # Kinesis Firehose Role
+# Kinesis Firehoseロールのポリシー定義: FirehoseがS3へデータを書き込むための権限
 data "aws_iam_policy_document" "kinesis" {
   statement {
     sid = "S3Access"
 
     effect = "Allow"
+    # FirehoseがS3バケットにデータを書き込むために必要な最小限のS3権限
     actions = [
       "s3:AbortMultipartUpload",
       "s3:GetBucketLocation",
@@ -445,6 +493,7 @@ data "aws_iam_policy_document" "kinesis" {
       "s3:ListBucketMultipartUploads",
       "s3:PutObject"
     ]
+    # 推論ログ保管用S3バケットのみにアクセスを制限する（最小権限の原則）
     resources = [
       "arn:aws:s3:::${aws_s3_bucket.predict_api.bucket}",
       "arn:aws:s3:::${aws_s3_bucket.predict_api.bucket}/*",
@@ -452,6 +501,7 @@ data "aws_iam_policy_document" "kinesis" {
   }
 }
 
+# Kinesis Firehoseロール用IAMポリシーを作成する
 resource "aws_iam_policy" "kinesis" {
   name   = "mlops-kinesis-policy"
   policy = data.aws_iam_policy_document.kinesis.json
@@ -461,6 +511,7 @@ resource "aws_iam_policy" "kinesis" {
   }
 }
 
+# Kinesis Firehoseの信頼ポリシー: FirehoseサービスにAssumeRoleを許可する
 data "aws_iam_policy_document" "kinesis_assume_role" {
   statement {
     actions = ["sts:AssumeRole"]
@@ -471,6 +522,7 @@ data "aws_iam_policy_document" "kinesis_assume_role" {
   }
 }
 
+# Kinesis Firehoseロール: FirehoseがS3へデータを転送する際に使用するIAMロール
 resource "aws_iam_role" "kinesis" {
   name               = "mlops-kinesis-role"
   assume_role_policy = data.aws_iam_policy_document.kinesis_assume_role.json
@@ -480,6 +532,7 @@ resource "aws_iam_role" "kinesis" {
   }
 }
 
+# Kinesis FirehoseロールにポリシーをアタッチするM
 resource "aws_iam_role_policy_attachment" "kinesis" {
   role       = aws_iam_role.kinesis.name
   policy_arn = aws_iam_policy.kinesis.arn

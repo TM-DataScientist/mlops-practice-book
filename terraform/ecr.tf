@@ -1,12 +1,14 @@
+# ECRリポジトリ: MLOpsメインアプリケーション（学習・推論APIコンテナ）のイメージ保管先
 resource "aws_ecr_repository" "mlops" {
   name                 = "mlops-practice"
-  image_tag_mutability = "MUTABLE"
+  image_tag_mutability = "MUTABLE" # 同一タグへの上書きプッシュを許可する（latestタグ運用のため）
 
   tags = {
     Name = "mlops-ecr-repository"
   }
 }
 
+# ECRライフサイクルポリシー: mlopsリポジトリの古いイメージを自動削除してストレージコストを削減する
 resource "aws_ecr_lifecycle_policy" "mlops" {
   repository = aws_ecr_repository.mlops.name
 
@@ -16,6 +18,7 @@ resource "aws_ecr_lifecycle_policy" "mlops" {
         {
           "rulePriority" : 1,
           "description" : "Delete any image older than 3 days",
+          # プッシュから3日以上経過したイメージ（タグ有無問わず）を削除する
           "selection" : {
             "tagStatus" : "any"
             "countType" : "sinceImagePushed",
@@ -31,15 +34,17 @@ resource "aws_ecr_lifecycle_policy" "mlops" {
   )
 }
 
+# ECRリポジトリ: Fluent Bitサイドカーコンテナ（ログ転送）のイメージ保管先
 resource "aws_ecr_repository" "fluentbit" {
   name                 = "fluentbit"
-  image_tag_mutability = "MUTABLE"
+  image_tag_mutability = "MUTABLE" # latestタグ運用のため上書きを許可する
 
   tags = {
     Name = "mlops-fluentbit-ecr-repository"
   }
 }
 
+# ECRライフサイクルポリシー: fluentbitリポジトリの古いイメージを自動削除する
 resource "aws_ecr_lifecycle_policy" "fluentbit" {
   repository = aws_ecr_repository.fluentbit.name
   policy = jsonencode(
@@ -48,6 +53,7 @@ resource "aws_ecr_lifecycle_policy" "fluentbit" {
         {
           "rulePriority" : 1,
           "description" : "Delete any image older than 3 days",
+          # プッシュから3日以上経過したイメージ（タグ有無問わず）を削除する
           "selection" : {
             "tagStatus" : "any"
             "countType" : "sinceImagePushed",
@@ -64,6 +70,8 @@ resource "aws_ecr_lifecycle_policy" "fluentbit" {
 
 }
 
+# ローカルビルド＆プッシュリソース: Fluent BitのDockerイメージをビルドしてECRへプッシュする
+# fluentbitディレクトリ配下のファイル変更を検知して再実行するトリガーを持つ
 resource "null_resource" "fluentbit" {
   # Trigger when any file in the fluentbit directory changes
   triggers = {
@@ -93,6 +101,7 @@ resource "null_resource" "fluentbit" {
     command = "docker push ${aws_ecr_repository.fluentbit.repository_url}:latest"
   }
 
+  # ECRリポジトリとライフサイクルポリシーの作成後に実行する
   depends_on = [
     aws_ecr_repository.fluentbit,
     aws_ecr_lifecycle_policy.fluentbit
