@@ -1,18 +1,40 @@
+# ワークフロー名: OpenID Connect (OIDC) を使ったAWS認証のサンプル
+# 従来のアクセスキー・シークレットキーをSecretsに登録する方式ではなく、
+# OIDCによる一時的な認証情報の取得を実演するワークフロー
 name: aws authentication by openid connect
 
+# トリガー設定:
+# mainブランチへのpush時にこのワークフローを実行する
 on:
   push:
     branches: [main]
 
+# ジョブ定義
 jobs:
+  # ジョブ名: OIDCによるAWS認証を検証するジョブ
   aws-authentication:
+    # 実行環境: GitHubが提供する最新のUbuntuランナーを使用
     runs-on: ubuntu-latest
+
+    # 権限設定:
+    # OIDCトークンの発行にはid-tokenのwrite権限が必要
+    # この権限があることでGitHub ActionsがJWTトークンをAWSに提示し、
+    # 一時的な認証情報（アクセスキー・シークレット・セッショントークン）を取得できる
     permissions:
       id-token: write
+
     steps:
+      # AWS認証ステップ:
+      # aws-actions/configure-aws-credentials@v4 を使ってOIDCでAWSに認証する
+      # role-to-assume: 引き受けるIAMロールのARN（SecretsにASsuME_ROLE_ARNとして登録済み）
+      #   - このIAMロールにはGitHub ActionsのOIDCプロバイダーからの信頼関係を設定しておく必要がある
+      # aws-region: リソースが存在するAWSリージョン（東京リージョン）
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.ASSUME_ROLE_ARN }}
           aws-region: "ap-northeast-1"
 
+      # 動作確認ステップ:
+      # AWS CLIでS3バケットの一覧を取得し、認証が正常に機能していることを確認する
+      # 認証に成功していればS3バケット一覧が表示され、失敗すればエラーになる
       - run: aws s3 ls

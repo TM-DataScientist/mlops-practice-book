@@ -1,42 +1,73 @@
+# ワークフロー名: GitHub Actions の基本的な動作を示すサンプルワークフロー
+# このファイルはGitHub Actionsの構成要素（トリガー・ジョブ・ステップ・依存関係）を
+# シンプルな例で解説するための学習用サンプルである
 # workflow name
 name: github actions sample workflow
 
+# トリガー設定:
+# mainブランチへのpush時にこのワークフローを実行する
 # event definition
 on:
   push:
     branches: [main]
 
+# ジョブ定義:
+# このワークフローには2つのジョブがあり、run-python → build の順に実行される
 # job definition
 jobs:
+  # ジョブ1: Pythonスクリプトを実行するジョブ
   run-python:
 
+    # 実行環境:
+    # GitHubが提供する最新のUbuntuランナー上で実行する
     # runner definition
     runs-on: ubuntu-latest
 
+    # ステップ定義:
+    # ジョブ内で順番に実行される処理の単位
     # step definition
     steps:
+      # コードチェックアウトステップ:
+      # actions/checkout@v5 を使ってリポジトリのコードをランナーに取得する
+      # これにより後続のステップでリポジトリ内のファイルにアクセスできる
       # checkout the repository
       - name: Checkout code
         uses: actions/checkout@v5
 
+      # Pythonセットアップステップ:
+      # actions/setup-python@v6 を使って指定バージョンのPythonをインストールする
+      # python-version: '3.12' でPython 3.12を使用することを明示的に指定している
       # set up python environment
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
           python-version: '3.12'
 
+      # Pythonスクリプト実行ステップ:
+      # python -c オプションでコマンドラインから直接Pythonコードを実行する
+      # ここでは "Hello World" を出力するシンプルな例を示している
       # run python script
       - name: Run Python
         run: |
           python -c "print('Hello World')"
 
+  # ジョブ2: アプリケーションをデプロイするジョブ
   build:
+    # 依存関係の設定:
+    # needs: run-python を指定することで、run-pythonジョブが成功した後にのみ
+    # このジョブが実行される（直列実行）
+    # needs が指定されていないジョブは並列で実行されるが、
+    # ここでは run-python の完了を待ってからデプロイを行う
     # dependency definition
     needs: run-python
 
+    # 実行環境: GitHubが提供する最新のUbuntuランナーを使用
     runs-on: ubuntu-latest
 
     steps:
+      # デプロイステップ:
+      # run-python ジョブが成功した後にデプロイ処理を実行する
+      # ここでは echo コマンドでメッセージを出力するダミー処理を示している
       - name: Deploy application
         run: |
           echo "Deploying to production..."

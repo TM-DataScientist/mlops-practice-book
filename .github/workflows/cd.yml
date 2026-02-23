@@ -1,66 +1,130 @@
+# ワークフロー名: 継続的デプロイ（CD）
+# mainブランチへのプルリクエストをトリガーに、以下の2つのジョブを並列で実行する:
+#   1. DockerイメージをビルドしてAmazon ECRへプッシュする
+#   2. Terraformを使ってAWSインフラへ変更を適用する
 name: continuous deployment
 
+# トリガー設定:
+# mainブランチへのプルリクエスト時にこのワークフローを実行する
+# （pushではなくpull_requestなので、マージ前の変更に対してデプロイが実行される）
 on:
   pull_request:
     branches: [ main ]
 
+# ジョブ定義
 jobs:
+  # ジョブ1: DockerイメージをビルドしてAmazon ECRへプッシュするジョブ
   ecr-deploy:
     name: Build and deploy image to ECR
+    # 実行環境: GitHubが提供する最新のUbuntuランナーを使用
     runs-on: ubuntu-latest
+
+    # 権限設定:
+    # id-token: write  - OIDCによるAWS認証に必要（一時的な認証情報を取得するため）
+    # contents: read   - actions/checkout でリポジトリのコードを取得するために必要
     permissions:
       id-token: write
       contents: read
 
     steps:
+      # コードチェックアウトステップ:
+      # リポジトリのコードをランナーのワークスペースに取得する
+      # Dockerfileやアプリケーションコードにアクセスするために必要
       - name: Checkout code
         uses: actions/checkout@v5
 
+      # AWS認証ステップ:
+      # OIDCを使ってAWSに認証し、一時的な認証情報をランナーの環境変数に設定する
+      # role-to-assume: 引き受けるIAMロールのARN（ECRへのpush権限が必要）
+      # aws-region: 東京リージョンを指定
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.ASSUME_ROLE_ARN }}
           aws-region: "ap-northeast-1"
 
+      # ECRログインステップ:
+      # Amazon ECRのプライベートリポジトリにDockerイメージをpushするためにログインする
+      # ログイン後、後続ステップで outputs.registry を通じてECRのレジストリURLを参照できる
+      # id: login-ecr を設定することで ${{ steps.login-ecr.outputs.registry }} で参照可能
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
+      # イメージビルド・タグ付け・プッシュステップ:
+      # Dockerfileからイメージをビルドし、2種類のタグを付けてECRにプッシュする
+      # 環境変数:
+      #   ECR_REGISTRY  - 前のステップで取得したECRのレジストリURL
+      #   ECR_REPOSITORY - ECRリポジトリ名（mlops-practice）
       - name: Build, tag, and push image to Amazon ECR
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           ECR_REPOSITORY: mlops-practice
         run: |
+          # コミットSHAの先頭7文字を短縮SHAとして取得する（例: a1b2c3d）
+          # これによりどのコミットからビルドされたイメージかを追跡できる
           SHORT_SHA=$(git rev-parse --short "$GITHUB_SHA")
+
+          # イメージURIを組み立てる（例: 123456789012.dkr.ecr.ap-northeast-1.amazonaws.com/mlops-practice）
           IMAGE_URI=$ECR_REGISTRY/$ECR_REPOSITORY
 
-          docker build -f ./Dockerfile -t $IMAGE_URI:$SHORT_SHA -t $IMAGE_URI:latest . 
+          # イメージを2つのタグでビルドする:
+          #   $SHORT_SHA - コミットSHAタグ（特定バージョンの追跡・ロールバック用）
+          #   latest     - 最新イメージを示すタグ（常に最新を参照したい場合に使用）
+          docker build -f ./Dockerfile -t $IMAGE_URI:$SHORT_SHA -t $IMAGE_URI:latest .
+
+          # 両方のタグを一度にECRへプッシュする（--all-tags で全タグをまとめてpush）
           docker push --all-tags $IMAGE_URI
 
+  # ジョブ2: TerraformでAWSインフラへ変更を適用するジョブ
+  # ecr-deployと並列で実行される（dependsなし）
   terraform-deploy:
     name: Apply terraform
+    # 実行環境: GitHubが提供する最新のUbuntuランナーを使用
     runs-on: ubuntu-latest
+
+    # 権限設定:
+    # id-token: write  - OIDCによるAWS認証に必要
+    # contents: read   - リポジトリのTerraformコードを取得するために必要
     permissions:
       id-token: write
       contents: read
 
     steps:
+      # コードチェックアウトステップ:
+      # リポジトリのTerraformコードをランナーのワークスペースに取得する
       - name: Checkout code
         uses: actions/checkout@v5
 
+      # AWS認証ステップ:
+      # OIDCを使ってAWSに認証し、一時的な認証情報をランナーの環境変数に設定する
+      # role-to-assume: 引き受けるIAMロールのARN（Terraformによるインフラ変更権限が必要）
+      # aws-region: 東京リージョンを指定
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.ASSUME_ROLE_ARN }}
           aws-region: "ap-northeast-1"
 
+      # Terraformセットアップステップ:
+      # 指定バージョンのTerraform CLIをランナーにインストールする
+      # terraform_version: バージョンを固定することで実行環境の一貫性を保つ
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.9.8
 
+      # Terraform初期化ステップ:
+      # S3バックエンドの設定を読み込み、stateファイルへの接続を初期化する
+      # プロバイダープラグインもここでダウンロードされる
+      # working-directory: terraformディレクトリ内でコマンドを実行する
       - name: Run init Terraform
         working-directory: terraform
         run: terraform init
 
+      # Terraform applyステップ:
+      # Terraformの定義に従いAWSインフラへ変更を適用する
+      # -auto-approve: 確認プロンプトをスキップし、自動で変更を適用する
+      #   （CIパイプラインでは対話的な入力ができないため必須オプション）
+      # working-directory: terraformディレクトリ内でコマンドを実行する
       - name: Run apply
         working-directory: terraform
         run: terraform apply -auto-approve

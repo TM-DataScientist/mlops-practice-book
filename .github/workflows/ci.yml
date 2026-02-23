@@ -1,59 +1,117 @@
+# ワークフロー名: 継続的インテグレーション（CI）
+# このワークフローはコード品質の維持とテストの自動化を担う
+# 2つのジョブを並列で実行する:
+#   1. python-lint-test: Pythonコードの静的解析・型チェック・各種テスト
+#   2. terraform-lint:   Terraformコードのフォーマット・構文・計画チェック
 name: continuous integration
 
+# トリガー設定:
 # mainブランチへのプルリクエスト時にCIを実行する
+# pushではなくpull_requestにすることで、mainへのマージ前に品質チェックを強制できる
 on:
   pull_request:
     branches: [ main ]
 
+# ジョブ定義
 jobs:
+  # ジョブ1: PythonプロジェクトのLintおよびテストを実行するジョブ
+  # ruff（フォーマット・Lint）、mypy（型チェック）、pytest（単体・統合・E2Eテスト）を順番に実行する
   python-lint-test:
     name: lint and test for Python project
+    # 実行環境: GitHubが提供する最新のUbuntuランナーを使用
     runs-on: ubuntu-latest
+
+    # 権限設定:
+    # id-token: write - OIDCによるAWS認証に必要（一時的な認証情報を取得するため）
+    # contents: read  - リポジトリのコードを読み取るために必要
     permissions:
       id-token: write   # OIDCによるAWS認証に必要
       contents: read    # リポジトリのコードを読み取るために必要
 
     steps:
+      # コードチェックアウトステップ:
+      # リポジトリのコードをランナーのワークスペースに取得する
+      # 後続のすべてのステップはこのコードを対象に処理を行う
       - name: Checkout code
         uses: actions/checkout@v5
 
+      # AWS認証ステップ:
+      # OIDCを使ってAWSに認証し、一時的な認証情報をランナーの環境変数に設定する
+      # アクセスキーをSecretsに登録する必要がなく、よりセキュアな認証方式
+      # role-to-assume: 引き受けるIAMロールのARN（S3・DynamoDBなどへのアクセス権限が必要）
+      # aws-region: 東京リージョンを指定
       # OIDCを使ってAWSの一時的な認証情報を取得する（アクセスキー不要）
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.ASSUME_ROLE_ARN }}
           aws-region: "ap-northeast-1"
 
+      # Pythonセットアップステップ:
+      # pyproject.tomlに記載されたPythonバージョンをセットアップする
+      # python-version-file を指定することで、pyproject.tomlの [tool.python] セクションに
+      # 記載されたバージョンを自動的に読み取ってインストールする（バージョンの二重管理を防ぐ）
       # pyproject.tomlに記載されたPythonバージョンをセットアップする
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
           python-version-file: "pyproject.toml"
 
+      # uvセットアップステップ:
+      # 高速なPythonパッケージマネージャー「uv」をインストールする
+      # version: バージョンを固定することでCI環境の一貫性を保つ
+      # uvはpipよりも大幅に高速で、依存関係の解決もより正確に行える
       - name: Install uv
         uses: astral-sh/setup-uv@v6
         with:
           version: "0.6.12"
 
+      # プロジェクトインストールステップ:
+      # uv sync コマンドでプロジェクトの依存関係をインストールする
+      # --all-extras: オプショナルな依存関係（extras）もすべてインストールする
+      # --dev:        開発用依存関係（テストツール・Lintツールなど）もインストールする
       # 開発用依存関係も含めてすべてインストールする
       - name: Install the project
         run: uv sync --all-extras --dev
 
+      # フォーマットチェックステップ:
+      # ruff format --check でPythonコードのフォーマットを検証する
+      # --check: ファイルを実際には変更せず、フォーマット違反があればエラーで終了する
+      # 対象: src ディレクトリ以下のすべてのPythonファイル
       # ruffによるフォーマットチェック（自動修正はしない）
       - name: Run formatter check
         run: uv run ruff format src --check
 
+      # Lintステップ:
+      # ruff check でPythonコードの静的解析を行う
+      # 未使用インポート・未定義変数・コーディング規約違反などを検出する
+      # 対象: src ディレクトリ以下のすべてのPythonファイル
       # ruffによる静的解析
       - name: Run linter
         run: uv run ruff check src
 
+      # 型チェックステップ:
+      # mypyでPythonコードの静的型チェックを行う
+      # 型アノテーションの整合性を検証し、型エラーを事前に検出する
+      # 対象: src ディレクトリ以下のすべてのPythonファイル
       # mypyによる型チェック
       - name: Run mypy
         run: uv run mypy src
 
+      # 単体テスト実行ステップ:
+      # pytestで単体テストを実行する
+      # -m 'not integration and not e2e': integrationマーカーとe2eマーカーが付いたテストを除外する
+      # これにより外部サービス（AWS）への接続が不要な単体テストのみを実行する
       # integrationとe2eを除いた単体テストを実行する
       - name: Run unit test
         run: uv run pytest -m 'not integration and not e2e'
 
+      # AWSプロファイル設定ステップ:
+      # Docker Compose内のコンテナからAWSにアクセスするためのプロファイルを設定する
+      # Docker Composeコンテナは環境変数を直接引き継がないため、
+      # OIDCで取得した一時的な認証情報（アクセスキー・シークレット・セッショントークン）を
+      # ~/.aws/credentials に "mlops-practice" プロファイルとして書き込む
+      # AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN は
+      # configure-aws-credentials ステップで自動的に設定された環境変数
       # Docker Compose内からAWSにアクセスするためにプロファイルを設定する
       # OIDCで取得した一時的な認証情報をプロファイルとして保存する
       - name: Setup AWS credentials profile
@@ -63,6 +121,15 @@ jobs:
           aws configure set aws_session_token $AWS_SESSION_TOKEN --profile mlops-practice
           aws configure set region $AWS_REGION --profile mlops-practice
 
+      # Docker Compose起動ステップ:
+      # 推論APIサーバーをDockerコンテナとしてバックグラウンドで起動する
+      # 環境変数:
+      #   MODEL_NAME:       使用するMLモデルの名前（SGD分類器）
+      #   MODEL_VERSION:    使用するモデルのバージョン（latest = 最新版）
+      #   FEATURE_VERSION:  使用する特徴量のバージョン（latest = 最新版）
+      #   AWS_PROFILE:      AWSアクセスに使用するプロファイル名（前ステップで設定）
+      # --build: イメージを毎回ビルドし直すことで最新コードが反映されることを保証する
+      # -d:      バックグラウンドでコンテナを起動する（デーモンモード）
       # 推論APIをDockerコンテナとしてバックグラウンド起動する
       - name: Start Docker Compose
         env:
@@ -72,55 +139,106 @@ jobs:
           AWS_PROFILE: mlops-practice
         run: docker compose up --build -d
 
+      # 統合テスト実行ステップ:
+      # pytestで統合テストを実行する
+      # -m integration: integrationマーカーが付いたテストのみを実行する
+      # これはAWSリソース（DynamoDB・S3など）との実際の通信を伴うテストである
+      # Docker Composeで起動した推論APIサーバーとの連携も含む
       # AWSリソース（DynamoDB・S3など）との通信を伴う統合テストを実行する
       - name: Run integration test
         run: uv run pytest -m integration tests
 
+      # E2Eテスト実行ステップ:
+      # pytestでエンドツーエンドテストを実行する
+      # -m e2e: e2eマーカーが付いたテストのみを実行する
+      # これはシステム全体を通して実際のユーザー操作をシミュレートするテストである
+      # 推論APIへのリクエストからレスポンスまでの全フローを検証する
       # システム全体を通したエンドツーエンドテストを実行する
       - name: Run e2e test
         run: uv run pytest -m e2e tests
 
+      # Docker Compose停止ステップ:
+      # テスト完了後にDockerコンテナを停止・削除する
+      # if: always() - テストが成功・失敗・キャンセルいずれの場合でも必ず実行される
+      # これによりコンテナが残り続けてリソースを消費するのを防ぐ
       # テストの成否にかかわらず必ずコンテナを停止する
       - name: Stop Docker Compose
         if: always()
         run: docker compose down
 
+  # ジョブ2: TerraformコードのフォーマットおよびバリデーションLintジョブ
+  # Terraformコードの品質チェックを行い、意図しないインフラ変更を防ぐ
   terraform-lint:
     name:  Terraform format and validate
+    # 実行環境: GitHubが提供する最新のUbuntuランナーを使用
     runs-on: ubuntu-latest
+
+    # 権限設定:
+    # id-token: write - OIDCによるAWS認証に必要
+    #   （terraform init でS3バックエンドへ接続するため認証が必要）
+    # contents: read  - リポジトリのTerraformコードを読み取るために必要
     permissions:
       id-token: write
       contents: read
 
     steps:
+      # コードチェックアウトステップ:
+      # リポジトリのTerraformコードをランナーのワークスペースに取得する
       - name: Checkout code
         uses: actions/checkout@v5
 
+      # AWS認証ステップ:
+      # OIDCを使ってAWSに認証し、一時的な認証情報をランナーの環境変数に設定する
+      # terraform init でS3バックエンドに接続するためにAWS認証が必要
+      # role-to-assume: 引き受けるIAMロールのARN（S3バックエンドへのアクセス権限が必要）
+      # aws-region: 東京リージョンを指定
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.ASSUME_ROLE_ARN }}
           aws-region: "ap-northeast-1"
 
+      # Terraformセットアップステップ:
+      # 指定バージョンのTerraform CLIをランナーにインストールする
+      # terraform_version: バージョンを固定することでCI/CD環境の一貫性を保つ
+      #   バージョンが変わると構文や挙動が変わる可能性があるため固定が重要
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.9.8
 
+      # Terraform初期化ステップ:
+      # S3バックエンドへ接続してstateファイルを初期化し、プロバイダープラグインをダウンロードする
+      # この初期化がないと fmt・validate・plan などのコマンドが実行できない
+      # working-directory: terraform ディレクトリ内でコマンドを実行する
       # S3バックエンドの初期化（stateファイルへの接続確認）
       - name: Run init
         working-directory: terraform
         run: terraform init
 
+      # フォーマットチェックステップ:
+      # terraform fmt -check でTerraformコードのフォーマットを検証する
+      # -check:     ファイルを実際には変更せず、フォーマット違反があればエラーで終了する
+      # -recursive: サブディレクトリ以下のTerraformファイルも再帰的にチェックする
+      # working-directory: terraform ディレクトリ内でコマンドを実行する
       # terraform fmtによるフォーマットチェック（自動修正はしない）
       - name: Run formatter check
         working-directory: terraform
         run: terraform fmt -check -recursive
 
+      # バリデーションステップ:
+      # terraform validate でTerraformコードの構文・設定の正確性を検証する
+      # リソースの参照・変数の型・必須引数の有無などの論理的な整合性もチェックする
+      # working-directory: terraform ディレクトリ内でコマンドを実行する
       # terraform validateによる構文チェック
       - name: Run validate
         working-directory: terraform
         run: terraform validate
 
+      # Terraform planステップ:
+      # terraform plan で現在のインフラとTerraformコードの差分を確認する
+      # 実際の変更は行わず、適用される変更内容をプレビューするだけ
+      # これによりPRマージ前に意図しないインフラ変更が含まれていないか確認できる
+      # working-directory: terraform ディレクトリ内でコマンドを実行する
       # terraform planによるインフラ差分確認
       - name: Run plan
         working-directory: terraform
