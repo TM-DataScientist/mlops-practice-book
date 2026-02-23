@@ -106,7 +106,10 @@ async def predict(ad_request: AdRequest, request: Request) -> dict[str, str | fl
     # スキーマ定義の順序に従ってカラムを並び替える
     df = df[[schema.name for schema in request.state.model_config.schemas]]
 
-    # モデルによる予測確率を計算する（クリック率の予測値）
+    # メモリ上にロード済みの学習済みモデルオブジェクトのメソッドを直接呼び出して推論する
+    # request.state.model は lifespan で S3 からダウンロードしたモデルオブジェクトであり、
+    # エンドポイントへの通信ではなくローカルのメモリ上で推論が完結する（外部通信なし）
+    # リクエストのたびに S3 からダウンロードすると遅いため、起動時に1回だけロードして使い回している
     # Get prediction
     prediction = request.state.model.predict_proba(df)
 
