@@ -1,6 +1,6 @@
 locals {
   # 自分のGitHubリポジトリ名を設定する
-  github_repository = "<your-github-username>/<your-repository-name>"
+  github_repository = "TM-DataScientist/mlops-practice-book"
 }
 
 resource "aws_iam_openid_connect_provider" "github_actions" {
