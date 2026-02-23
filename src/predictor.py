@@ -43,10 +43,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
         raise ValueError("Model S3 key not found")
 
     model_config = get_model_config(model_name=model_name)
+    #  S3 からモデルファイルをダウンロード
     model = model_config.model_class.from_pretrained(s3_key=model_s3_key)
 
     online_feature_store = OnlineFeatureStoreDynamoDB(table=FEATURE_DYNAMODB_TABLE, version=feature_version)
 
+    # 論結果をログとして記録するために、DataFrame に列を追加
     def log_prediction(df: pd.DataFrame, prediction: float) -> None:
         df = df.assign(
             prediction=prediction,
